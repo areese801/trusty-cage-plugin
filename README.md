@@ -4,6 +4,8 @@ Claude Code plugin for [trusty-cage](https://github.com/areese801/trusty-cage) â
 
 ## Installation
 
+Run these commands inside a [Claude Code](https://claude.ai/code) session:
+
 ```
 /plugin marketplace add areese801/trusty-cage-plugin
 /plugin install trusty-cage@trusty-cage-plugin
