@@ -1,0 +1,12 @@
+{
+  "name": "trusty-cage",
+  "description": "Skills for orchestrating trusty-cage containers — delegate tasks to isolated Claude Code instances",
+  "version": "1.0.0",
+  "author": {
+    "name": "Adam Reese"
+  },
+  "repository": "https://github.com/areese801/trusty-cage-plugin",
+  "homepage": "https://github.com/areese801/trusty-cage",
+  "license": "MIT",
+  "keywords": ["trusty-cage", "docker", "isolation", "orchestration", "agents"]
+}

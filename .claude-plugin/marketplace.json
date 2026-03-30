@@ -1,0 +1,14 @@
+{
+  "name": "trusty-cage-plugin",
+  "owner": {
+    "name": "Adam Reese"
+  },
+  "plugins": [
+    {
+      "name": "trusty-cage",
+      "source": ".",
+      "description": "Skills for orchestrating trusty-cage containers",
+      "version": "1.0.0"
+    }
+  ]
+}
