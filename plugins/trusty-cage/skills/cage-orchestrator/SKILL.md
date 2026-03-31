@@ -259,15 +259,25 @@ Record the working tree state before exporting so you can detect unexpected chan
 git status --short
 ```
 
-**9b — Export:**
+**9b — Preview with stats:**
+
+Before exporting, show the user what the inner agent changed with language-aware code statistics:
 
 ```bash
-venv/bin/tc export "$ENV_NAME" --yes --output-dir .
+venv/bin/tc diff "$ENV_NAME" --stats
 ```
 
-This rsyncs container files into the current directory, excluding `.git/` so the host repo's git history is preserved.
+This shows a file change summary (added/modified/deleted) plus a per-language breakdown of lines added, removed, and modified. If `cloc` is installed on the host, stats are language-aware; otherwise a built-in line counter is used.
 
-**9c — Post-export validation and restore:**
+**9c — Export:**
+
+```bash
+venv/bin/tc export "$ENV_NAME" --yes --stats --output-dir .
+```
+
+This rsyncs container files into the current directory, excluding `.git/` so the host repo's git history is preserved. The `--stats` flag prints a code statistics summary after export.
+
+**9d — Post-export validation and restore:**
 
 Immediately after export, validate and fix the results:
 
