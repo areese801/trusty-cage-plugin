@@ -7,8 +7,7 @@
     {
       "name": "trusty-cage",
       "source": "./plugins/trusty-cage",
-      "description": "Skills for orchestrating trusty-cage containers",
-      "version": "1.0.0"
+      "description": "Skills for orchestrating trusty-cage containers"
     }
   ]
 }
