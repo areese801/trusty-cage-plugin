@@ -161,10 +161,10 @@ When you have completed the task:
 1. Send a `task_complete` message via `cage-send`
 2. Run the following polling script to wait for revised instructions:
 ```bash
-INTERVAL=10; MAX_WAIT=3600; ELAPSED=0
+ELAPSED=0
 CURSOR_FILE=~/.cage/cursor/inbox.cursor
 CURSOR=$(cat "$CURSOR_FILE" 2>/dev/null || echo "")
-while [ $ELAPSED -lt $MAX_WAIT ]; do
+while true; do
   for f in $(ls -1 ~/.cage/inbox/ 2>/dev/null | sort); do
     if [ -z "$CURSOR" ] || [ "$f" \> "$CURSOR" ]; then
       cat ~/.cage/inbox/"$f"
@@ -172,16 +172,24 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
       exit 0
     fi
   done
+  if [ $ELAPSED -lt 900 ]; then
+    INTERVAL=10
+  elif [ $ELAPSED -lt 3600 ]; then
+    INTERVAL=30
+  elif [ $ELAPSED -lt 7200 ]; then
+    INTERVAL=60
+  else
+    break
+  fi
   sleep $INTERVAL
   ELAPSED=$((ELAPSED + INTERVAL))
-  INTERVAL=$((INTERVAL * 2 > 300 ? 300 : INTERVAL * 2))
 done
 echo "POLL_TIMEOUT"
 ```
 3. If the script returns JSON, parse it — it will be a `task_revision` message. Read the `payload.instructions` field and continue working on the project accordingly. When done, repeat from step 1.
 4. If the script returns `POLL_TIMEOUT`, send a `going_idle` message via `cage-send`:
    ```bash
-   cage-send going_idle '{"reason":"No task_revision received within polling timeout","waited_seconds":3600}'
+   cage-send going_idle '{"reason":"No task_revision received within polling timeout","waited_seconds":7200}'
    ```
    Then stop working.
 ```
