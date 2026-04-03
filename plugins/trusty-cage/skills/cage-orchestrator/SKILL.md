@@ -11,8 +11,8 @@ Spin up an isolated trusty-cage container, launch an inner Claude Code agent to 
 
 Check if running inside a cage:
 
-1. Check `echo $TRUSTY_CAGE` — if value is `1`, jump to **Inner Agent Protocol**
-2. Fallback: run `whoami` — if output is `trustycage`, jump to **Inner Agent Protocol**
+1. Check `echo $TRUSTY_CAGE` — if value is `1`, load [inner-agent-protocol.md](inner-agent-protocol.md) and follow it instead of this workflow
+2. Fallback: run `whoami` — if output is `trustycage`, load [inner-agent-protocol.md](inner-agent-protocol.md) and follow it instead of this workflow
 3. Otherwise → continue with **Outer Orchestration Workflow**
 
 ---
@@ -40,7 +40,14 @@ venv/bin/pip install trusty-cage
 | trusty-cage installed | `venv/bin/tc --help` | "trusty-cage venv setup failed. Check Python and pip." |
 | Docker running | `docker info >/dev/null 2>&1` | "Docker is not running. Start Docker or OrbStack first." |
 | Git repo | `git rev-parse --is-inside-work-tree` | "Current directory is not a git repository." |
-| Git remote | `git remote get-url origin` | "No git remote 'origin' found. Add one before using cage-orchestrator." |
+
+**Optionally** check for a git remote — this determines how the cage is created (Step 5/6):
+
+```bash
+REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
+```
+
+If `REPO_URL` is empty, the cage will be created from the local directory using `--dir`. A remote is **not** required.
 
 **Important:** Ensure the project has a `.gitignore` that includes `venv/` so the venv is not committed to git and is protected from deletion during `tc export` (which uses `rsync --delete` but respects `.gitignore` patterns).
 
@@ -58,17 +65,17 @@ Per dotfiles conventions, if currently on `main` (or `master`), prompt:
 
 If the user agrees, create the branch before proceeding. If they decline, continue on current branch.
 
-### Step 5: Derive Repo URL
+### Step 5: Derive Repo URL (if remote exists)
+
+Use the `REPO_URL` value determined in Step 2. If a remote exists and the URL is SSH format (`git@github.com:...`), convert to HTTPS:
 
 ```bash
-REPO_URL=$(git remote get-url origin)
+if [ -n "$REPO_URL" ]; then
+  REPO_URL=$(${CLAUDE_PLUGIN_ROOT}/skills/cage-orchestrator/scripts/tc-url-convert.sh "$REPO_URL")
+fi
 ```
 
-If the URL is SSH format (`git@github.com:...`), convert to HTTPS using the helper script:
-
-```bash
-REPO_URL=$(${CLAUDE_PLUGIN_ROOT}/skills/cage-orchestrator/scripts/tc-url-convert.sh "$REPO_URL")
-```
+If `REPO_URL` is empty, the cage will be created from the local directory in Step 6.
 
 ### Step 6: Create Cage Environment
 
@@ -90,8 +97,14 @@ If exit code is 0 (exists), ask the user: **reuse**, **destroy and recreate**, o
 - If `ANTHROPIC_API_KEY` is set, use `--auth-mode api_key` (API billing)
 - Otherwise, use `--auth-mode subscription` (Claude Pro/Max — extracts OAuth tokens from macOS Keychain automatically)
 
+**Create the cage** — use URL mode if a remote exists, otherwise use local directory mode:
+
 ```bash
-venv/bin/tc create "$REPO_URL" --name "$ENV_NAME" --auth-mode <mode> --no-attach
+if [ -n "$REPO_URL" ]; then
+  venv/bin/tc create "$REPO_URL" --name "$ENV_NAME" --auth-mode <mode> --no-attach
+else
+  venv/bin/tc create --dir "$(git rev-parse --show-toplevel)" --name "$ENV_NAME" --auth-mode <mode> --no-attach
+fi
 ```
 
 The `create` command automatically initializes messaging directories at `/home/trustycage/.cage/{outbox,inbox,cursor}` inside the container and installs `cage-send` at `/usr/local/bin/cage-send`.
@@ -365,106 +378,6 @@ Not supported — always wait for `task_complete` before offering another revisi
 
 ---
 
-## Inner Agent Protocol
-
-**This section applies when `TRUSTY_CAGE=1` is set or `whoami` returns `trustycage`.**
-
-You are running inside a trusty-cage container. You have full autonomy but no git credentials and no push capability.
-
-### Rules
-
-- Focus entirely on the task. Your project is at `/home/trustycage/project`
-- Work only within `/home/trustycage/project`
-- You have full permissions — install packages, edit any file, run any command
-- Use git locally (`git add`, `git commit`) to checkpoint your work, but you **cannot push**
-- **Do NOT invoke the `cage-orchestrator` skill** — you are the inner agent
-- Do not attempt to access external services that require authentication
-
-### Messaging
-
-Use `cage-send` to communicate with the outer orchestrator:
-
-```bash
-# Report progress (send periodically during long tasks)
-cage-send progress_update '{"status":"implementing auth module","detail":"3 of 5 files done"}'
-
-# Request files or info from outside the container
-cage-send info_request '{"request_id":"req-001","description":"Need package.json","paths":["package.json"]}'
-
-# Report an error / blocker
-cage-send error '{"error_type":"missing_dependency","message":"Cannot resolve X","recoverable":false}'
-
-# Signal completion (REQUIRED as your final action)
-cage-send task_complete '{"summary":"Implemented feature X: added 3 files, modified 2","exit_code":0}'
-```
-
-After sending `info_request`, check `~/.cage/inbox/` for the response:
-
-```bash
-ls ~/.cage/inbox/*.json 2>/dev/null | sort | while read f; do cat "$f"; echo; done
-```
-
-### When Finished
-
-1. Commit your work locally: `git add -A && git commit -m "description of changes"`
-2. Send completion: `cage-send task_complete '{"summary":"what you did","exit_code":0}'`
-
-### If Blocked
-
-1. Send an `error` message with `"recoverable": false` and a description of the blocker
-2. If you can partially complete the task, do so, then send `task_complete` with `"exit_code": 1`
-
----
-
-## Messaging Protocol Reference
-
-### Message Envelope
-
-Every message (inbox and outbox) uses this JSON format:
-
-```json
-{
-  "id": "msg-20260326T143000-a1b2",
-  "type": "task_complete",
-  "timestamp": "2026-03-26T14:30:00.000Z",
-  "payload": { ... },
-  "version": 1
-}
-```
-
-### Directory Layout
-
-```
-/home/trustycage/.cage/
-  outbox/           # Inner writes, outer reads
-  inbox/            # Outer writes, inner reads
-  cursor/
-    outbox.cursor   # Outer's read position (managed by trusty-cage)
-    inbox.cursor    # Inner's read position
-```
-
-### Message Types
-
-| Type | Direction | Payload |
-|------|-----------|---------|
-| `task_complete` | inner → outer | `{"summary": str, "exit_code": int}` |
-| `info_request` | inner → outer | `{"request_id": str, "description": str, "paths": [str]}` |
-| `progress_update` | inner → outer | `{"status": str, "detail": str \| null}` |
-| `error` | inner → outer | `{"error_type": str, "message": str, "recoverable": bool}` |
-| `info_response` | outer → inner | `{"request_id": str, "content": str, "files": [{"path": str, "content": str}]}` |
-| `ack` | outer → inner | `{"acked_id": str}` |
-| `task_revision` | outer → inner | `{"instructions": str}` |
-| `going_idle` | inner → outer | `{"reason": str, "waited_seconds": int}` |
-
-### File Naming
-
-Messages are named by timestamp with colons replaced by dashes for filesystem safety:
-`2026-03-26T14-30-00.000Z.json`
-
-Lexicographic sort of filenames equals chronological order.
-
----
-
 ## Known Limitations
 
 1. **Single task per session**: One task dispatch per cage. The messaging system enables future multi-task support.
@@ -472,18 +385,8 @@ Lexicographic sort of filenames equals chronological order.
 
 ---
 
-## Prompt Templates (Optional)
+## Additional resources
 
-These are suggested starting points for the Task Prompt (Part 1 of Step 7). Select the closest template and customize the task description. The Standard Messaging Block (Part 2) is appended automatically.
-
-**Add a Feature:**
-> Implement {feature description}. Write clean, idiomatic code following existing project conventions. Add tests if a test suite exists. Commit your work with a descriptive message.
-
-**Fix a Bug:**
-> Fix: {bug description}. Reproduce the issue first, then identify the root cause and implement a fix. Add a regression test if a test suite exists. Commit with a message describing the fix.
-
-**Add Tests:**
-> Add test coverage for {module or area}. Follow existing test patterns and conventions in the project. Aim for meaningful coverage of edge cases, not just happy paths. Commit your work.
-
-**Refactor:**
-> Refactor {area} to {goal}. Preserve all existing behavior — no functional changes. Run existing tests to verify nothing breaks. Commit your work with a descriptive message.
+- [inner-agent-protocol.md](inner-agent-protocol.md) — Rules, messaging commands, and completion steps for when Claude is running **inside** a cage (`TRUSTY_CAGE=1`). Load this when the Detection Gate (Step 1) determines you are the inner agent.
+- [messaging-protocol.md](messaging-protocol.md) — Message envelope schema, directory layout, all message types with payload definitions, and file naming conventions. Load this when you need details about the messaging format during monitoring (Step 8) or debugging.
+- [prompt-templates.md](prompt-templates.md) — Suggested starting points for the Task Prompt (Part 1 of Step 7). Load this when constructing the inner prompt to choose an appropriate template.
