@@ -165,46 +165,23 @@ After sending info_request, check ~/.cage/inbox/ for responses:
 ### Important
 
 - You MUST send a task_complete message when your work is done
-- Send progress_update messages every few minutes during long tasks
+- You MUST send progress_update messages at least every 3 minutes during long tasks — if the host doesn't hear from you for 5+ minutes, it will assume you are stuck
 - Do not attempt to read outside ~/.cage/inbox/ — you cannot see the host filesystem
 
-## After Task Completion
+## After Task Completion (REQUIRED — do this IMMEDIATELY)
 
 When you have completed the task:
 1. Send a `task_complete` message via `cage-send`
-2. Run the following polling script to wait for revised instructions:
-```bash
-ELAPSED=0
-CURSOR_FILE=~/.cage/cursor/inbox.cursor
-CURSOR=$(cat "$CURSOR_FILE" 2>/dev/null || echo "")
-while true; do
-  for f in $(ls -1 ~/.cage/inbox/ 2>/dev/null | sort); do
-    if [ -z "$CURSOR" ] || [ "$f" \> "$CURSOR" ]; then
-      cat ~/.cage/inbox/"$f"
-      echo "$f" > "$CURSOR_FILE"
-      exit 0
-    fi
-  done
-  if [ $ELAPSED -lt 900 ]; then
-    INTERVAL=10
-  elif [ $ELAPSED -lt 3600 ]; then
-    INTERVAL=30
-  elif [ $ELAPSED -lt 7200 ]; then
-    INTERVAL=60
-  else
-    break
-  fi
-  sleep $INTERVAL
-  ELAPSED=$((ELAPSED + INTERVAL))
-done
-echo "POLL_TIMEOUT"
-```
-3. If the script returns JSON, parse it — it will be a `task_revision` message. Read the `payload.instructions` field and continue working on the project accordingly. When done, repeat from step 1.
-4. If the script returns `POLL_TIMEOUT`, send a `going_idle` message via `cage-send`:
+2. IMMEDIATELY run `cage-wait` to wait for revised instructions — do not do anything else first:
+   ```bash
+   cage-wait
+   ```
+   This blocks until the host sends a follow-up message or 2 hours pass.
+3. If `cage-wait` outputs JSON, it is a `task_revision` message. Read the `payload.instructions` field and continue working on the project accordingly. When done with the revision, repeat from step 1.
+4. If `cage-wait` outputs `POLL_TIMEOUT`, send a `going_idle` message and stop:
    ```bash
    cage-send going_idle '{"reason":"No task_revision received within polling timeout","waited_seconds":7200}'
    ```
-   Then stop working.
 ```
 
 **Assemble and launch** — combine Part 1 + Part 2 into `INNER_PROMPT`. For short prompts, pass inline:
