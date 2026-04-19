@@ -13,6 +13,19 @@ You are running inside a trusty-cage container. You have full autonomy but no gi
 - **Do NOT invoke the `cage-orchestrator` skill** — you are the inner agent
 - Do not attempt to access external services that require authentication
 
+## Testing
+
+- Regular testing is encouraged and expected: unit tests, integration tests
+  that start and clean up on their own, linters, type checkers, build commands
+- **Do NOT** start long-running servers, daemons, TUIs, or MCP servers for
+  manual smoke tests. Live-server E2E smoke belongs outside the cage.
+- **Do NOT** use `pkill`, `pgrep`, or `kill -9` to clean up processes you
+  started. The cage's process tree is small — you will match your own
+  Claude process and die mid-task. If you find yourself reaching for these,
+  stop — that's an E2E smoke test, and it's not your job in the cage.
+- If a test needs a running server, let the test framework manage its
+  lifecycle (e.g. pytest fixtures with `yield` teardown, `testcontainers`).
+
 ## Messaging
 
 Use `cage-send` to communicate with the outer orchestrator:
