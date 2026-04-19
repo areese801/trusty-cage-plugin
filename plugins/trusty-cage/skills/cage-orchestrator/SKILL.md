@@ -79,10 +79,24 @@ If `REPO_URL` is empty, the cage will be created from the local directory in Ste
 
 ### Step 6: Create Cage Environment
 
-Derive an environment name from the repo directory name, or let the user specify one.
+**Derive an environment name** using a deterministic recipe so names stay consistent across a campaign:
+
+```
+<repo-basename>-<task-slug>
+```
+
+- `<repo-basename>`: `basename $(git rev-parse --show-toplevel)` (e.g., `kanberoo`)
+- `<task-slug>`: a short, lowercase, hyphen-separated slug derived from `TASK_DESCRIPTION` — keep it ≤ 20 characters; drop stopwords (`add`, `the`, `a`, `and`, `to`) if needed
+
+Examples:
+- Repo `kanberoo`, task "Add REST endpoint models" → `kanberoo-rest-models`
+- Repo `kanberoo`, task "Fix TUI detail pane scrolling bug" → `kanberoo-tui-detail-scroll`
+- Repo `snippets`, task "Add gist publishing support" → `snippets-gist-publish`
+
+If the operator already set `$ENV_NAME` or the user gave an explicit name, use that instead:
 
 ```bash
-ENV_NAME="${ENV_NAME:-$(basename $(git rev-parse --show-toplevel))}"
+ENV_NAME="${ENV_NAME:-<recipe above>}"
 ```
 
 Check if the environment already exists:
@@ -135,6 +149,27 @@ INSTRUCTIONS:
 - You have full permissions — install packages, edit any file, run any command
 - Use git locally to checkpoint your work (git add, git commit) but you cannot push
 - Do not attempt to use cage-orchestrator or any orchestration skills
+
+VERIFICATION (do the normal testing expected for this change):
+- Run the project's unit tests (e.g. `pytest`, `npm test`, `cargo test`, `go test ./...`)
+- Run integration tests that start and clean up on their own
+- Run linters, formatters, and type checkers (e.g. `ruff`, `mypy`, `eslint`, `tsc`)
+- Run build commands if relevant (e.g. `make build`, `npm run build`)
+- Commit the work once tests pass
+
+DO NOT:
+- Start long-running servers, daemons, TUIs, or MCP servers inside the cage
+  for manual smoke tests. End-to-end smoke against a live server is the outer
+  orchestrator's job — it runs after `tc export`, not inside the cage.
+- Use `pkill`, `pgrep`, or `kill -9` to clean up processes you started. If you
+  find yourself reaching for these, stop — you're doing an E2E smoke test,
+  and that's not your job in the cage.
+- Background processes with `&` and then try to kill them later. The cage's
+  process tree is small; you will match your own Claude process and die.
+
+If a test requires a running server, trust the test framework to start and
+stop it (e.g. pytest fixtures with `yield` teardown, `testcontainers`). Do
+not manage process lifecycle by hand.
 ```
 
 **Part 2 — Standard Messaging Block** (appended automatically to every inner prompt — do not modify or omit):
@@ -324,7 +359,30 @@ Ask the user:
 3. Go back to **Step 8** (Monitor Progress)
 
 **If done:**
-Proceed to Step 12.
+
+If this cycle produced a pull request that the user merged, verify the merge before proceeding — trust, but confirm. See **Step 11b** below; then continue to Step 12.
+
+### Step 11b: Verify PR Merge (when applicable)
+
+If you created a pull request in this cycle (typically via `gh pr create`), capture the URL at creation time and verify the merge claim before destroying the cage.
+
+**Skip this step entirely** if the repo has no GitHub remote — `gh` will not work for other forges.
+
+```bash
+# Check that a GitHub remote exists
+if git remote get-url origin | grep -q 'github\.com'; then
+  PR_URL="<the URL printed by gh pr create>"
+  gh pr view "$PR_URL" --json state,mergedAt,mergedBy
+fi
+```
+
+Interpret the result:
+
+- `"state": "MERGED"` with a non-null `mergedAt` → proceed to Step 12
+- `"state": "OPEN"` or `"state": "CLOSED"` (not merged) → flag the mismatch to the user: "The PR at `<url>` shows state `<state>` — it doesn't appear to be merged yet. Would you like to wait, or abandon this cycle?"
+- `gh` not installed or auth failure → ask the user to confirm the merge manually; do not block.
+
+**Autonomous long-campaign mode (optional):** If you are running a multi-cage campaign without a human in the loop, poll `gh pr view` on a gentle cadence (e.g. every 5–10 minutes) instead of asking the user. Do not poll eagerly — that wastes API quota and the user's agency. A cheap verification call right after the user says "merged" is almost always enough.
 
 ### Step 12: Cleanup
 
