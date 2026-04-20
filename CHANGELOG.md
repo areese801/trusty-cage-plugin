@@ -6,6 +6,11 @@ This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PA
 
 ---
 
+## [1.4.0] - 2026-04-19
+
+### Added
+- **`smoke-test-templates.md`** — Host-side live smoke test starting points (HTTP API, CLI tool, TUI, MCP server) to run after `tc export`. Referenced from `SKILL.md` Step 9d and the Additional Resources list. Covers the sandbox + readiness-probe + curl + trap-cleanup pattern that avoids the backgrounded-process traps forbidden inside the cage. Completes phase-1 enhancement G as a doc pattern rather than a CLI command.
+
 ## [1.3.0] - 2026-04-19
 
 ### Added

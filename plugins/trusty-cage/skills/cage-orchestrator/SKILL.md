@@ -329,7 +329,9 @@ Immediately after export, validate and fix the results:
 
 4. If a test suite exists (e.g., `pytest`, `npm test`, `make test`), offer to run it to verify the exported code works on the host.
 
-5. Present a summary to the user:
+5. For service-style projects (HTTP API, TUI, MCP), offer a live smoke test using one of the shapes in [smoke-test-templates.md](smoke-test-templates.md). Live-server smoke is the outer orchestrator's job — it is explicitly forbidden inside the cage (see Step 7's "DO NOT" block).
+
+6. Present a summary to the user:
    - Files added (new from cage)
    - Files modified (expected changes)
    - Files unexpectedly deleted or overwritten (flag these)
@@ -425,3 +427,4 @@ Not supported — always wait for `task_complete` before offering another revisi
 - [inner-agent-protocol.md](inner-agent-protocol.md) — Rules, messaging commands, and completion steps for when Claude is running **inside** a cage (`TRUSTY_CAGE=1`). Load this when the Detection Gate (Step 1) determines you are the inner agent.
 - [messaging-protocol.md](messaging-protocol.md) — Message envelope schema, directory layout, all message types with payload definitions, and file naming conventions. Load this when you need details about the messaging format during monitoring (Step 8) or debugging.
 - [prompt-templates.md](prompt-templates.md) — Suggested starting points for the Task Prompt (Part 1 of Step 7). Load this when constructing the inner prompt to choose an appropriate template.
+- [smoke-test-templates.md](smoke-test-templates.md) — Host-side live smoke test shapes (HTTP API, CLI, TUI, MCP) to run after `tc export`. Load this at Step 9d when the project is service-style and you want to verify end-to-end behavior before committing.
