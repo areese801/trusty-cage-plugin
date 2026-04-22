@@ -302,6 +302,34 @@ venv/bin/tc diff "$ENV_NAME" --stats
 
 This shows a file change summary (added/modified/deleted) plus a per-language breakdown of lines added, removed, and modified. If `cloc` is installed on the host, stats are language-aware; otherwise a built-in line counter is used.
 
+**9b.alt — Cleaner alternative for single-commit cages: `tc patch`**
+
+If the cage's deliverable is one or more clean git commits (typical when the inner agent was instructed to commit its work), prefer `tc patch` over `tc export`:
+
+```bash
+venv/bin/tc patch "$ENV_NAME" --base main
+git am ./.trusty-cage-patches/"$ENV_NAME"/*.patch
+```
+
+Or, as a single streaming pipeline:
+
+```bash
+venv/bin/tc patch "$ENV_NAME" --base main --stdout | git am
+```
+
+Why: `tc export` rsyncs the full working tree, which brings along any transient files the cage's tooling left behind (`.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `node_modules/`, plus whatever pip / uv installed). `tc patch` emits `git format-patch` output from inside the cage, so only the commit(s) land on the host.
+
+Fallback for trusty-cage versions older than `0.13.0` (before `tc patch` existed):
+
+```bash
+docker exec -u trustycage "isolated-dev-$ENV_NAME" bash -c \
+  "cd /home/trustycage/project && git format-patch main -o /tmp/tc-patches/"
+docker cp "isolated-dev-$ENV_NAME:/tmp/tc-patches/." ./.cage-patches/
+git am ./.cage-patches/*.patch
+```
+
+Use `tc export` (step 9c below) when the deliverable isn't cleanly committed (work-in-progress, generated assets the inner agent didn't git-add, multiple unrelated changes the user wants to stage themselves).
+
 **9c — Export:**
 
 ```bash

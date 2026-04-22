@@ -6,6 +6,11 @@ This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PA
 
 ---
 
+## [1.5.0] - 2026-04-21
+
+### Added
+- **Step 9b.alt — `tc patch` as a cleaner alternative to `tc export`.** When the cage's deliverable is one or more clean commits, `tc patch <env>` emits `git format-patch` output from inside the cage and lands only the commit(s) on the host — avoiding the working-tree noise (`.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, plus pip/uv install side-effects) that `tc export`'s rsync brings along. Requires trusty-cage ≥ 0.13.0; a `docker exec ... git format-patch` fallback is documented for older versions. `tc export` remains the right tool for uncommitted work or multi-file work-in-progress.
+
 ## [1.4.0] - 2026-04-19
 
 ### Added
