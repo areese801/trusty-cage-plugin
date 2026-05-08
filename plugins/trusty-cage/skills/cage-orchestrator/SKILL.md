@@ -19,6 +19,19 @@ Check if running inside a cage:
 
 ## Outer Orchestration Workflow
 
+### Companion skill: Kanbaroo bridge (optional)
+
+If the user's Claude Code session also has the [`kanbaroo-plugin`](https://github.com/areese801/kanbaroo-plugin) installed and a Kanbaroo MCP wired up for this project (`mcp__kanbaroo__*` tools visible, a workspace identifiable for the project), the **`kanbaroo-cage-bridge`** skill from that plugin will activate alongside this orchestrator. The bridge mirrors cage lifecycle events onto a Kanbaroo story automatically:
+
+- creates or attaches a story before dispatch,
+- posts a throttled comment per `progress_update`,
+- posts a summary comment on `tc export`,
+- captures revision instructions as a comment before `tc inbox`.
+
+You do not need to call `mcp__kanbaroo__*` tools yourself — the bridge owns the Kanbaroo side. This SKILL still owns every `tc` command and the cage lifecycle. Where the bridge augments a step, the inline note in that step says so explicitly.
+
+**Graceful degradation.** If the bridge is not loaded (kanbaroo-plugin not installed, no Kanbaroo MCP configured, or no workspace identifiable for the project), this workflow runs exactly as it did before — no extra prompts, no failed tool calls, no Kanbaroo-shaped placeholders. Treat every "if the bridge is active" note below as a no-op in that case. Never block a cage dispatch waiting for Kanbaroo.
+
 ### Step 2: Validate Prerequisites and Set Up Environment
 
 **Set up a project-local venv with trusty-cage:**
@@ -57,6 +70,8 @@ If `REPO_URL` is empty, the cage will be created from the local directory using 
 - If not, ask: "What task should the inner Claude work on?"
 - Be specific — this prompt is passed verbatim to the inner agent
 
+**If the user references a Kanbaroo story human ID** (e.g. "let's work on `KAN-123`") and the bridge is active, the bridge will look the story up via `mcp__kanbaroo__get_story`, surface the title/description, and embed a condensed context block into the cage prompt automatically. You do not need to query Kanbaroo yourself; capture whatever description the user provides as `TASK_DESCRIPTION` and let the bridge enrich it. If the bridge is not active, treat the human ID as ordinary task context — there is no Kanbaroo lookup to perform.
+
 ### Step 4: Suggest Feature Branch
 
 Per dotfiles conventions, if currently on `main` (or `master`), prompt:
@@ -64,6 +79,8 @@ Per dotfiles conventions, if currently on `main` (or `master`), prompt:
 > "You're on the main branch. Would you like to create a feature branch for the cage output? This lets you review changes via PR."
 
 If the user agrees, create the branch before proceeding. If they decline, continue on current branch.
+
+**If the bridge surfaced a Kanbaroo story human ID** during Step 3, prefer it as the branch prefix per the dotfiles convention for ticket-prefixed branches (e.g. `KAN-123_add_rest_endpoints`). When the bridge is not active, use the standard `feature/<description>` / `fix/<description>` / `chore/<description>` shape.
 
 ### Step 5: Derive Repo URL (if remote exists)
 
@@ -149,6 +166,13 @@ INSTRUCTIONS:
 - You have full permissions — install packages, edit any file, run any command
 - Use git locally to checkpoint your work (git add, git commit) but you cannot push
 - Do not attempt to use cage-orchestrator or any orchestration skills
+- If the environment variable `$KANBAROO_STORY_ID` is set, it holds the
+  human ID (e.g. `KAN-123`) of the Kanbaroo story representing this work.
+  Reference it in commit messages and any PR description so the board can
+  be linked back to the change. The outer orchestrator's Kanbaroo bridge
+  will mirror your progress comments to the story automatically — do not
+  attempt to post Kanbaroo comments yourself. If `$KANBAROO_STORY_ID` is
+  unset, ignore this clause.
 
 VERIFICATION (do the normal testing expected for this change):
 - Run the project's unit tests (e.g. `pytest`, `npm test`, `cargo test`, `go test ./...`)
@@ -232,6 +256,17 @@ echo "$INNER_PROMPT" > /tmp/cage-prompt-$ENV_NAME.txt
 venv/bin/tc launch "$ENV_NAME" --prompt-file /tmp/cage-prompt-$ENV_NAME.txt --background
 ```
 
+**If the bridge is active and surfaced a Kanbaroo story ID** at this point, pass it to `tc launch` as a launch-time environment variable so the inner Claude can reference it in commit messages and PR descriptions. The exact env-injection flag is `tc`'s, not this skill's — confirm with `venv/bin/tc launch --help` if you have not used it on this machine before. Typical shape:
+
+```bash
+venv/bin/tc launch "$ENV_NAME" \
+  --prompt-file /tmp/cage-prompt-$ENV_NAME.txt \
+  --env KANBAROO_STORY_ID="$KANBAROO_STORY_ID" \
+  --background
+```
+
+When the bridge is not active, omit the env injection — the conditional clause in the Task Prompt above self-skips when `$KANBAROO_STORY_ID` is unset, so it is safe to leave the prompt text in place.
+
 Tell the user: "Inner Claude is working in the cage. I'll check on it periodically."
 
 ### Step 8: Monitor Progress
@@ -257,6 +292,8 @@ venv/bin/tc outbox "$ENV_NAME" --poll --timeout 1800 --interval 30
 - Exit with code 0 when `task_complete` is received
 - Exit with code 2 when `going_idle` is received (inner Claude timed out waiting for revisions)
 - Exit with code 1 on error or timeout
+
+**If the bridge is active**, each `progress_update` and `error` it observes (via the messages this skill surfaces) is mirrored to the active Kanbaroo story as a throttled comment. The bridge handles formatting and rate-limiting per its own rules — do not duplicate that work here, and do not call `mcp__kanbaroo__comment_on_story` yourself. When the bridge is not active, surfacing messages to the user is the only mirroring that happens.
 
 **If you need more control** (e.g., to handle `info_request` messages), poll manually:
 
@@ -364,6 +401,8 @@ Immediately after export, validate and fix the results:
    - Files modified (expected changes)
    - Files unexpectedly deleted or overwritten (flag these)
 
+**If the bridge is active**, once you have surfaced the export results (the file-change summary plus `tc diff --stats` output), the bridge posts a single summary comment to the active Kanbaroo story and then asks the user whether to transition the story (typically to `in_review` if a PR is being opened, or `done` if the work is already merged outside the cage). Defer to the bridge for those Kanbaroo-side actions; do not transition the story yourself, and do not duplicate the summary comment. When the bridge is not active, the export results live only in this conversation — no Kanbaroo mirroring happens, by design.
+
 ### Step 10: Review Changes with User
 
 Show the user the detailed diff for review:
@@ -382,11 +421,12 @@ Ask the user:
 
 **If revise:**
 1. Gather revised instructions from the user — what to change, fix, or improve
-2. Send to inner Claude:
+2. **If the bridge is active**, it captures the revision instructions verbatim as a comment on the active Kanbaroo story *before* this skill runs `tc inbox` — that comment is the durable record of what was asked of the cage. Do not post the revision comment yourself; let the bridge run first, then proceed with `tc inbox`. If the bridge is not active, skip this sub-step entirely.
+3. Send to inner Claude:
    ```bash
    venv/bin/tc inbox "$ENV_NAME" task_revision '{"instructions": "<user feedback here>"}'
    ```
-3. Go back to **Step 8** (Monitor Progress)
+4. Go back to **Step 8** (Monitor Progress)
 
 **If done:**
 

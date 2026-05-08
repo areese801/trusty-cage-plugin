@@ -16,6 +16,19 @@ description: >-
 
 You are a systems engineer focused on continuously improving the trusty-cage orchestration pipeline. Your job is to run the full cycle: dispatch work to an inner Claude in a cage, assess how the orchestration performed, identify friction and failures, plan and implement improvements to the trusty-cage CLI and cage-orchestrator skill, then re-test to verify the improvements work. Each cycle should leave the system measurably better than before.
 
+## Companion skill: Kanbaroo bridge (optional)
+
+If the user's Claude Code session also has the [`kanbaroo-plugin`](https://github.com/areese801/kanbaroo-plugin) installed and a Kanbaroo MCP wired up for this project, the **`kanbaroo-cage-bridge`** skill will activate during Step 2 (when you delegate to `cage-orchestrator`) and mirror that dispatch's lifecycle onto a Kanbaroo story automatically.
+
+**Kanbaroo as a durable home for friction reports.** The iteration loop generates exactly the kind of artefact a board is good at holding: a friction report per cycle, an enhancement candidate list, a comparison of "resolved" vs "still open" between runs. When Kanbaroo is available you have two complementary patterns:
+
+- **Per-cycle parent story.** Create one Kanbaroo story per iteration cycle (e.g. "Iteration cycle: improve auth + messaging — 2026-05-08") and use the cycle's friction report (Step 3b/3c), the enhancement plan (Step 4), and the close-the-loop comparison (Step 7) as comments on that single story. The cage dispatched in Step 2 still gets its own story via the bridge — link the two manually using `kanbaroo-workflow`.
+- **Per-friction sub-stories.** When a cycle's enhancement list is large enough to span multiple cages, file each enhancement as a separate Kanbaroo story so it can be picked up independently in subsequent cycles. The parent cycle story then links to those.
+
+**Note: the bridge does not currently know about cage-iterate.** The existing `kanbaroo-cage-bridge` skill is `cage-orchestrator`-aware: it auto-mirrors a single cage dispatch. The iterate-loop integration above is therefore manual today — when a step below says "post the friction report to Kanbaroo," that means asking `kanbaroo-workflow` to create a comment, not relying on the bridge to do it. A future `kanbaroo-cage-iterate-bridge` (or extension to the existing bridge) could automate the per-cycle parent story pattern; for now, the manual pattern is the integration.
+
+**Graceful degradation.** If Kanbaroo is not available (no `mcp__kanbaroo__*` tools, no kanbaroo-plugin), every Kanbaroo-flavored sub-step below is a no-op. The iterate loop runs exactly as it did before — the friction report stays in this conversation and in `TODO.md`, no Kanbaroo lookup or comment is attempted, and no error surfaces.
+
 ## Core Instructions
 
 ### Step 1: Establish the Test Task
@@ -34,6 +47,8 @@ Invoke the `cage-orchestrator` skill to execute `TEST_TASK` end-to-end.
 - Follow the cage-orchestrator workflow through all steps: prerequisites, create, launch, monitor, export
 - **Pay close attention to every friction point**: auth failures, polling gaps, messaging issues, timing problems, manual interventions needed
 - Keep a running log of observations as you go — do not rely on memory
+
+**If the Kanbaroo bridge is active**, the cage-orchestrator dispatch you trigger here will be mirrored to a Kanbaroo story automatically (creation, progress comments, export summary, revision capture — all per the bridge's hooks). That story represents the *test workload*, not the iteration cycle itself. If you have created a separate parent "iteration cycle" story (see the companion-skill section above), link the two manually using `kanbaroo-workflow` so the parent retains the trail.
 
 ### Step 3: Assess Results
 
@@ -75,6 +90,8 @@ Present the findings to the user in a structured format:
 ## Enhancement Candidates
 - (numbered list, each with: what, why, estimated effort)
 ```
+
+**If Kanbaroo is available**, offer to file this assessment as a comment on the parent iteration-cycle story (per the companion-skill section above) — it is the most useful artefact a board can hold from this loop. If the user prefers, file each Enhancement Candidate as its own Kanbaroo story so the next cycle can pick them up by human ID. Use `kanbaroo-workflow` to create the comment or stories; do not call the MCP tools directly from this skill.
 
 ### Step 4: Prioritize and Plan
 
@@ -121,6 +138,8 @@ Present the comparison to the user:
 ```
 
 Update `TODO.md` with any new items.
+
+**If Kanbaroo is available**, also post this comparison as a comment on the parent iteration-cycle story (if one exists), and either move the parent story to `done` or keep it open for the next cycle as the user prefers. For "Still Open" items the user wants to tackle next cycle, file them as Kanbaroo stories now so they are picked up by human ID rather than rediscovered. Defer transitions to the user — same etiquette as `kanbaroo-workflow`. When Kanbaroo is not available, `TODO.md` is the only durable record.
 
 Ask the user: "Run another cycle, or stop here?"
 
