@@ -34,23 +34,26 @@ You do not need to call `mcp__kanbaroo__*` tools yourself — the bridge owns th
 
 ### Step 2: Validate Prerequisites and Set Up Environment
 
-**Set up a project-local venv with trusty-cage:**
-
-1. Check if `venv/bin/tc` exists in the project directory
-2. If not, create a venv and install trusty-cage:
+**Resolve `tc` once.** Prefer a global install; fall back to a project-local venv only when needed. Capture the resolved path in `$TC` — every subsequent step in this workflow uses `$TC` rather than a hardcoded path.
 
 ```bash
-python3 -m venv venv
-venv/bin/pip install trusty-cage
+if command -v tc >/dev/null 2>&1 && tc --help >/dev/null 2>&1; then
+  TC=tc
+else
+  python3 -m venv venv
+  venv/bin/pip install trusty-cage
+  TC=venv/bin/tc
+fi
+echo "Using tc at: $(command -v "$TC" || echo "$TC")"
 ```
 
-3. All subsequent `tc` commands in this workflow must use `venv/bin/tc` (not a global install)
+If you fell back to the local venv path, ensure the project's `.gitignore` includes `venv/` so the venv is not committed to git and is protected from deletion during `tc export` (which uses `rsync --delete` but respects `.gitignore` patterns). When `$TC` resolved to a global install, this `.gitignore` advice does not apply.
 
 **Then check the remaining prerequisites.** If any fail, stop and report the error with fix instructions.
 
 | Check | Command | Error Message |
 |-------|---------|---------------|
-| trusty-cage installed | `venv/bin/tc --help` | "trusty-cage venv setup failed. Check Python and pip." |
+| trusty-cage installed | `$TC --help` | "trusty-cage is not available. Install with `pipx install trusty-cage` or let this skill create a project-local venv on the next run." |
 | Docker running | `docker info >/dev/null 2>&1` | "Docker is not running. Start Docker or OrbStack first." |
 | Git repo | `git rev-parse --is-inside-work-tree` | "Current directory is not a git repository." |
 
@@ -61,8 +64,6 @@ REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
 ```
 
 If `REPO_URL` is empty, the cage will be created from the local directory using `--dir`. A remote is **not** required.
-
-**Important:** Ensure the project has a `.gitignore` that includes `venv/` so the venv is not committed to git and is protected from deletion during `tc export` (which uses `rsync --delete` but respects `.gitignore` patterns).
 
 ### Step 3: Gather Task Description
 
@@ -119,7 +120,7 @@ ENV_NAME="${ENV_NAME:-<recipe above>}"
 Check if the environment already exists:
 
 ```bash
-venv/bin/tc exists "$ENV_NAME"
+$TC exists "$ENV_NAME"
 ```
 
 If exit code is 0 (exists), ask the user: **reuse**, **destroy and recreate**, or **abort**.
@@ -132,9 +133,9 @@ If exit code is 0 (exists), ask the user: **reuse**, **destroy and recreate**, o
 
 ```bash
 if [ -n "$REPO_URL" ]; then
-  venv/bin/tc create "$REPO_URL" --name "$ENV_NAME" --auth-mode <mode> --no-attach
+  $TC create "$REPO_URL" --name "$ENV_NAME" --auth-mode <mode> --no-attach
 else
-  venv/bin/tc create --dir "$(git rev-parse --show-toplevel)" --name "$ENV_NAME" --auth-mode <mode> --no-attach
+  $TC create --dir "$(git rev-parse --show-toplevel)" --name "$ENV_NAME" --auth-mode <mode> --no-attach
 fi
 ```
 
@@ -145,10 +146,10 @@ The `create` command automatically initializes messaging directories at `/home/t
 **Pre-flight check** — verify Claude can start before sending the real task:
 
 ```bash
-venv/bin/tc launch "$ENV_NAME" --test
+$TC launch "$ENV_NAME" --test
 ```
 
-If it fails, run `venv/bin/tc auth "$ENV_NAME" --login` to fix credentials interactively.
+If it fails, run `$TC auth "$ENV_NAME" --login` to fix credentials interactively.
 
 **Construct the inner prompt** from two parts — a task-specific section (which you write) and the Standard Messaging Block (which is always appended automatically):
 
@@ -246,20 +247,20 @@ When you have completed the task:
 **Assemble and launch** — combine Part 1 + Part 2 into `INNER_PROMPT`. For short prompts, pass inline:
 
 ```bash
-venv/bin/tc launch "$ENV_NAME" --prompt "$INNER_PROMPT" --background
+$TC launch "$ENV_NAME" --prompt "$INNER_PROMPT" --background
 ```
 
 For long prompts, write to a temp file first:
 
 ```bash
 echo "$INNER_PROMPT" > /tmp/cage-prompt-$ENV_NAME.txt
-venv/bin/tc launch "$ENV_NAME" --prompt-file /tmp/cage-prompt-$ENV_NAME.txt --background
+$TC launch "$ENV_NAME" --prompt-file /tmp/cage-prompt-$ENV_NAME.txt --background
 ```
 
-**If the bridge is active and surfaced a Kanbaroo story ID** at this point, pass it to `tc launch` as a launch-time environment variable so the inner Claude can reference it in commit messages and PR descriptions. The exact env-injection flag is `tc`'s, not this skill's — confirm with `venv/bin/tc launch --help` if you have not used it on this machine before. Typical shape:
+**If the bridge is active and surfaced a Kanbaroo story ID** at this point, pass it to `tc launch` as a launch-time environment variable so the inner Claude can reference it in commit messages and PR descriptions. The exact env-injection flag is `tc`'s, not this skill's — confirm with `$TC launch --help` if you have not used it on this machine before. Typical shape:
 
 ```bash
-venv/bin/tc launch "$ENV_NAME" \
+$TC launch "$ENV_NAME" \
   --prompt-file /tmp/cage-prompt-$ENV_NAME.txt \
   --env KANBAROO_STORY_ID="$KANBAROO_STORY_ID" \
   --background
@@ -272,19 +273,19 @@ Tell the user: "Inner Claude is working in the cage. I'll check on it periodical
 ### Step 8: Monitor Progress
 
 Monitor via CLI commands:
-- Stream inner Claude's reasoning: `venv/bin/tc logs "$ENV_NAME" -f`
-- Poll for structured messages: `venv/bin/tc outbox "$ENV_NAME" --poll`
+- Stream inner Claude's reasoning: `$TC logs "$ENV_NAME" -f`
+- Poll for structured messages: `$TC outbox "$ENV_NAME" --poll`
 
 **Watch the stream (optional):** Show the user they can observe in real-time:
 
 ```bash
-venv/bin/tc logs "$ENV_NAME" -f
+$TC logs "$ENV_NAME" -f
 ```
 
 Use `tc outbox --poll` to block until a `task_complete` message arrives:
 
 ```bash
-venv/bin/tc outbox "$ENV_NAME" --poll --timeout 1800 --interval 30
+$TC outbox "$ENV_NAME" --poll --timeout 1800 --interval 30
 ```
 
 `tc outbox --poll` will:
@@ -298,14 +299,14 @@ venv/bin/tc outbox "$ENV_NAME" --poll --timeout 1800 --interval 30
 **If you need more control** (e.g., to handle `info_request` messages), poll manually:
 
 ```bash
-venv/bin/tc outbox "$ENV_NAME"
+$TC outbox "$ENV_NAME"
 ```
 
 To respond to an `info_request`:
 
 ```bash
 # Read the requested file from the host
-venv/bin/tc inbox "$ENV_NAME" info_response '{"request_id":"req-001","content":"file contents here","files":[{"path":"package.json","content":"..."}]}'
+$TC inbox "$ENV_NAME" info_response '{"request_id":"req-001","content":"file contents here","files":[{"path":"package.json","content":"..."}]}'
 ```
 
 **Fallback process check:** If polling times out, verify Claude is still running:
@@ -317,7 +318,7 @@ docker exec -u trustycage "isolated-dev-$ENV_NAME" pgrep -f claude
 Handle the exit code:
 - **Exit 0** → proceed to Step 9
 - **Exit 2** → inform user that inner Claude went idle; offer to re-launch if needed
-- **Exit 1** → diagnose (check container status, `venv/bin/tc logs`)
+- **Exit 1** → diagnose (check container status, `$TC logs`)
 
 ### Step 9: Export, Validate, and Overlay
 
@@ -334,7 +335,7 @@ git status --short
 Before exporting, show the user what the inner agent changed with language-aware code statistics:
 
 ```bash
-venv/bin/tc diff "$ENV_NAME" --stats
+$TC diff "$ENV_NAME" --stats
 ```
 
 This shows a file change summary (added/modified/deleted) plus a per-language breakdown of lines added, removed, and modified. If `cloc` is installed on the host, stats are language-aware; otherwise a built-in line counter is used.
@@ -344,14 +345,14 @@ This shows a file change summary (added/modified/deleted) plus a per-language br
 If the cage's deliverable is one or more clean git commits (typical when the inner agent was instructed to commit its work), prefer `tc patch` over `tc export`:
 
 ```bash
-venv/bin/tc patch "$ENV_NAME" --base main
+$TC patch "$ENV_NAME" --base main
 git am ./.trusty-cage-patches/"$ENV_NAME"/*.patch
 ```
 
 Or, as a single streaming pipeline:
 
 ```bash
-venv/bin/tc patch "$ENV_NAME" --base main --stdout | git am
+$TC patch "$ENV_NAME" --base main --stdout | git am
 ```
 
 Why: `tc export` rsyncs the full working tree, which brings along any transient files the cage's tooling left behind (`.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `node_modules/`, plus whatever pip / uv installed). `tc patch` emits `git format-patch` output from inside the cage, so only the commit(s) land on the host.
@@ -370,7 +371,7 @@ Use `tc export` (step 9c below) when the deliverable isn't cleanly committed (wo
 **9c — Export:**
 
 ```bash
-venv/bin/tc export "$ENV_NAME" --yes --stats --output-dir .
+$TC export "$ENV_NAME" --yes --stats --output-dir .
 ```
 
 This rsyncs container files into the current directory, excluding `.git/` so the host repo's git history is preserved. The `--stats` flag prints a code statistics summary after export.
@@ -424,7 +425,7 @@ Ask the user:
 2. **If the bridge is active**, it captures the revision instructions verbatim as a comment on the active Kanbaroo story *before* this skill runs `tc inbox` — that comment is the durable record of what was asked of the cage. Do not post the revision comment yourself; let the bridge run first, then proceed with `tc inbox`. If the bridge is not active, skip this sub-step entirely.
 3. Send to inner Claude:
    ```bash
-   venv/bin/tc inbox "$ENV_NAME" task_revision '{"instructions": "<user feedback here>"}'
+   $TC inbox "$ENV_NAME" task_revision '{"instructions": "<user feedback here>"}'
    ```
 4. Go back to **Step 8** (Monitor Progress)
 
@@ -463,7 +464,7 @@ Ask the user:
 If destroy, run:
 
 ```bash
-venv/bin/tc destroy "$ENV_NAME" --yes
+$TC destroy "$ENV_NAME" --yes
 ```
 
 ### Edge Cases
@@ -471,12 +472,12 @@ venv/bin/tc destroy "$ENV_NAME" --yes
 **Inner Claude goes idle during revision cycle:**
 If `tc outbox --poll` exits with code 2 (`going_idle`), inner Claude's polling timed out. The cage is still alive. Inform the user and offer to re-launch:
 ```bash
-venv/bin/tc launch "$ENV_NAME" --prompt "Check your inbox for instructions and continue working on the project"
+$TC launch "$ENV_NAME" --prompt "Check your inbox for instructions and continue working on the project"
 ```
 This starts a fresh Claude session (losing conversational context) but preserves all file state.
 
 **Inner Claude crashes:**
-If `tc outbox --poll` times out (exit 1) without receiving `task_complete`, verify inner Claude is alive before sending a `task_revision`. Check container status or try `venv/bin/tc logs "$ENV_NAME"`. If dead, offer to re-launch.
+If `tc outbox --poll` times out (exit 1) without receiving `task_complete`, verify inner Claude is alive before sending a `task_revision`. Check container status or try `$TC logs "$ENV_NAME"`. If dead, offer to re-launch.
 
 **Multiple rapid revisions:**
 Not supported — always wait for `task_complete` before offering another revision cycle.
