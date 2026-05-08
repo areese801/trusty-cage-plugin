@@ -6,6 +6,12 @@ This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PA
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Bilateral Kanbaroo awareness in `cage-orchestrator` and `cage-iterate`.** Both skills now describe how the sibling [`kanbaroo-plugin`](https://github.com/areese801/kanbaroo-plugin)'s `kanbaroo-cage-bridge` skill augments the cage workflow when both plugins are installed: the bridge creates/attaches a Kanbaroo story before dispatch, mirrors `progress_update` events as throttled comments, posts a summary on `tc export`, and captures revision instructions before `tc inbox`. `cage-orchestrator`'s Step 7 task prompt now references the optional `KANBAROO_STORY_ID` environment variable so inner Claude can cite the story in commit messages, and Step 7's launch invocation shows the `--env KANBAROO_STORY_ID=…` shape. Every Kanbaroo-flavored note carries explicit graceful-degradation language — when the bridge is not loaded, both skills run exactly as they did before.
+- **`CLAUDE.md` (root) expanded for plugin developers.** New sections cover adjacent repos (`trusty-cage`, `kanbaroo-plugin`), when to update this repo vs the trusty-cage Python repo, SKILL.md frontmatter conventions, style + spelling rules, the version-bump release flow (no PyPI; tagged commit drives marketplace install), the runtime-activation testing approach, and a drift watch list calling out skill description drift, `tc` CLI surface drift, inner-agent protocol drift, and cross-skill coordination drift with kanbaroo-plugin.
+
 ## [1.5.0] - 2026-04-21
 
 ### Added
