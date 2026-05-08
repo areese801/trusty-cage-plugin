@@ -1,7 +1,7 @@
 {
   "name": "trusty-cage",
   "description": "Skills for orchestrating trusty-cage containers — delegate tasks to isolated Claude Code instances",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "author": {
     "name": "Adam Reese"
   },

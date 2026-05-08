@@ -8,6 +8,11 @@ This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PA
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-08
+
+### Changed
+- **`cage-orchestrator` Step 2 prefers a global `tc` install.** The workflow now resolves `tc` once at the top — preferring a global install on `PATH` (`pipx install trusty-cage`, system pip, etc.) and falling back to a project-local venv only when no global install is available — and captures the resolved path in `$TC` for use by every subsequent step. Removes the prior hard requirement that every project carry its own `venv/`. The `.gitignore`-includes-`venv/` advice is now conditional on the fallback path being taken. Surfaced as friction item #2 in the M3-3 cage-bridge validation pass (KAN-8).
+
 ## [1.6.0] - 2026-05-08
 
 ### Added
